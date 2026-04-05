@@ -21,15 +21,41 @@ export async function POST(request: Request) {
     const user = await getUser(locale);
 
     const title = typeof body.title === 'string' ? body.title.trim() : '';
-    const objective = typeof body.objective === 'string' && body.objective.trim() ? body.objective.trim() : null;
+    const objective =
+      typeof body.objective === 'string' && body.objective.trim()
+        ? body.objective.trim()
+        : null;
 
     if (!title) {
       return badRequest('Title is required', 400);
     }
 
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: {
+        name: user.name,
+        locale: user.locale
+      },
+      create: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        passwordHash: 'local-user-no-password',
+        locale: user.locale
+      }
+    });
+
+    const dbUser = await prisma.user.findUnique({
+      where: { email: user.email }
+    });
+
+    if (!dbUser) {
+      return badRequest('Could not create local user', 500);
+    }
+
     const created = await prisma.workspace.create({
       data: {
-        userId: user.id,
+        userId: dbUser.id,
         title,
         objective,
         summary: null,
@@ -37,7 +63,7 @@ export async function POST(request: Request) {
       }
     });
 
-    const workspace = await getWorkspaceRecord(created.id, user.id);
+    const workspace = await getWorkspaceRecord(created.id, dbUser.id);
     if (!workspace) {
       return badRequest('Could not create workspace', 500);
     }
